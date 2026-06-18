@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "rewrites": [
+  "redirects": [
     {
       "source": "/(.*)",
-      "destination": "https://silver-octo-robot-418160981597.europe-west1.run.app/"
+      "destination": "https://silver-octo-robot-418160981597.europe-west1.run.app/$1",
+      "permanent": false
     }
   ]
 }
