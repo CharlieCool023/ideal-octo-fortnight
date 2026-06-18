@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "https://silver-octo-robot-418160981597.europe-west1.run.app/"
+    }
+  ]
+}
