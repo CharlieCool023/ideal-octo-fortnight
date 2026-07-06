@@ -1,0 +1,8 @@
+[phases.build]
+cmds = ["npm install", "npm run build"]
+
+[phases.deploy]
+cmds = ["npm run db:push"]
+
+[start]
+cmd = "npm start"
