@@ -1,8 +1,11 @@
 {
+  "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
-  "buildCommand": "npm run build",
+  "functions": {
+    "server/index.js": { "runtime": "nodejs20.x" }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/server/index" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
