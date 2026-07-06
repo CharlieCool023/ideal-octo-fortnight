@@ -116,8 +116,13 @@ export default function DashboardLayout({
     );
   }
 
-  if (!user) return null;
-  if (requiredRole && user.role !== requiredRole) return null;
+  if (!user || (requiredRole && user.role !== requiredRole)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   const navItems = NAV_ITEMS[user.role] || [];
   const roleDisplay = ROLE_DISPLAY_NAMES[user.role] || "Staff";
