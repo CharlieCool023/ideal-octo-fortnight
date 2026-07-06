@@ -2,13 +2,7 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist/public",
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server/index"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+    { "src": "/api/(.*)", "dest": "/api/index" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
