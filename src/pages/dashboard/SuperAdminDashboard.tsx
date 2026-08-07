@@ -17,6 +17,8 @@ import {
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { trpc } from "@/providers/trpc";
+import { downloadCsvWithProgress } from "@/lib/downloadCsv";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -213,27 +215,19 @@ function BatchesTab() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [csvDownloaded, setCsvDownloaded] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const csvQuery = trpc.export.csv.useQuery(
-    { batchId: deleteTarget?.id ?? 0 },
-    { enabled: false } // only fetch on demand
-  );
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleDownloadCsv = async () => {
     if (!deleteTarget) return;
+    setDownloadError(null);
     setIsDownloading(true);
+    setDownloadProgress(0);
     try {
-      const result = await csvQuery.refetch();
-      if (result.data?.csv) {
-        const blob = new Blob([result.data.csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = result.data.filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        setCsvDownloaded(true);
-      }
+      await downloadCsvWithProgress(deleteTarget.id, setDownloadProgress);
+      setCsvDownloaded(true);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setIsDownloading(false);
     }
@@ -242,6 +236,8 @@ function BatchesTab() {
   const handleOpenDelete = (id: number, name: string) => {
     setDeleteTarget({ id, name });
     setCsvDownloaded(false);
+    setDownloadProgress(0);
+    setDownloadError(null);
   };
 
   const handleConfirmDelete = () => {
@@ -386,8 +382,14 @@ function BatchesTab() {
                     }`}
                   >
                     <Download className="w-4 h-4" />
-                    {isDownloading ? "Downloading..." : csvDownloaded ? "✓ CSV Downloaded" : "Download CSV Backup"}
+                    {isDownloading ? `Downloading... ${downloadProgress}%` : csvDownloaded ? "✓ CSV Downloaded" : "Download CSV Backup"}
                   </button>
+                  {isDownloading && (
+                    <div className="mt-3">
+                      <Progress value={downloadProgress} />
+                    </div>
+                  )}
+                  {downloadError && <p className="text-xs text-red-600 mt-2">{downloadError}</p>}
                 </div>
                 {csvDownloaded && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">

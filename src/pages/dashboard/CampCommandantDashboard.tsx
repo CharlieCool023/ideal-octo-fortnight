@@ -10,6 +10,8 @@ import ActionsMenu from "@/components/ActionsMenu";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
 import { useAuth } from "@/hooks/useAuth";
+import { downloadCsvWithProgress } from "@/lib/downloadCsv";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -705,20 +707,21 @@ function PrintTab() {
 function ExportTab() {
   const [selectedBatch, setSelectedBatch] = useState<number | undefined>();
   const { data: batches } = trpc.batches.list.useQuery();
-  const { data: csvData } = trpc.export.csv.useQuery(
-    selectedBatch ? { batchId: selectedBatch } : undefined,
-    { enabled: true }
-  );
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  const downloadCSV = () => {
-    if (!csvData?.csv) return;
-    const blob = new Blob([csvData.csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = csvData.filename;
-    a.click();
-    URL.revokeObjectURL(url);
+  const downloadCSV = async () => {
+    setError(null);
+    setIsDownloading(true);
+    setProgress(0);
+    try {
+      await downloadCsvWithProgress(selectedBatch, setProgress);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -730,10 +733,20 @@ function ExportTab() {
             <option value="">All Batches</option>
             {batches?.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
           </select>
-          <button onClick={downloadCSV} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors justify-center">
-            <Download className="w-4 h-4" /> Download CSV
+          <button
+            onClick={downloadCSV}
+            disabled={isDownloading}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors justify-center disabled:opacity-60"
+          >
+            <Download className="w-4 h-4" /> {isDownloading ? `Downloading... ${progress}%` : "Download CSV"}
           </button>
         </div>
+        {isDownloading && (
+          <div className="mt-4">
+            <Progress value={progress} />
+          </div>
+        )}
+        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
       </div>
     </div>
   );
