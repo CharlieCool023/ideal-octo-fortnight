@@ -6,6 +6,7 @@ import {
   CheckCircle, XCircle,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
 
@@ -27,7 +28,7 @@ export default function StateCommandantDashboard() {
 }
 
 function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
-  const { data: stats } = trpc.stats.dashboard.useQuery();
+  const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
     { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-blue-500", tab: "members" as Tab },
@@ -37,6 +38,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   return (
     <div className="space-y-6">
+      <ActiveBatchBanner activeBatch={stats?.activeBatch} isLoading={isLoading} isError={isError} />
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
         <p className="text-blue-700 text-sm font-medium flex items-center gap-2">
           <Eye className="w-4 h-4" />

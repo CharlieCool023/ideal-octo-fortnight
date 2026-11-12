@@ -6,3 +6,5 @@ export const ErrorMessages = {
 export const Paths = {
   login: "/login",
 } as const;
+
+export const MAX_BATCHES = 3;

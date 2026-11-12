@@ -1,10 +1,10 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, publicQuery, staffQuery, adminOrCommandantQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { batches, corpsMembers, evaluations, comments, commandantComments, higherInstitutions } from "@db/schema";
+import { MAX_BATCHES } from "@contracts/constants";
 import { eq, desc, sql, inArray } from "drizzle-orm";
-
-const MAX_BATCHES = 3;
 
 export const batchesRouter = createRouter({
   // List all batches (public so registration page can check for active batch)
@@ -55,9 +55,10 @@ export const batchesRouter = createRouter({
         .then((r) => r[0].count);
 
       if (Number(countResult) >= MAX_BATCHES) {
-        throw new Error(
-          `Maximum of ${MAX_BATCHES} batches allowed. Please delete an existing batch before creating a new one.`
-        );
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Maximum of ${MAX_BATCHES} batches allowed. Please delete an existing batch before creating a new one.`,
+        });
       }
 
       const result = await db.insert(batches).values(input);

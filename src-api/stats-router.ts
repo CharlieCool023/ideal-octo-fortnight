@@ -4,7 +4,7 @@ import { corpsMembers, evaluations, comments, staffUsers, batches } from "@db/sc
 import { eq, and, sql } from "drizzle-orm";
 
 type DashboardStats = {
-  activeBatch: { id: number; name: string; state: string } | null;
+  activeBatch: { id: number; name: string; state: string; year: number } | null;
   totalUsers?: number;
   totalCommandants?: number;
   totalBatches?: number;
@@ -30,7 +30,7 @@ export const statsRouter = createRouter({
 
     const stats: DashboardStats = {
       activeBatch: activeBatch
-        ? { id: activeBatch.id, name: activeBatch.name, state: activeBatch.state }
+        ? { id: activeBatch.id, name: activeBatch.name, state: activeBatch.state, year: activeBatch.year }
         : null,
     };
 

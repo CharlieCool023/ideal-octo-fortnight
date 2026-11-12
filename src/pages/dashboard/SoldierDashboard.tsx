@@ -5,6 +5,7 @@ import {
   Users, MessageSquare, Search, ArrowLeft, CheckCircle, Send,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
 
@@ -25,7 +26,7 @@ export default function SoldierDashboard() {
 }
 
 function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
-  const { data: stats } = trpc.stats.dashboard.useQuery();
+  const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
     { label: "Total Members", value: stats?.totalMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-red-500", tab: "platoon" as Tab },
@@ -35,6 +36,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   return (
     <div className="space-y-6">
+      <ActiveBatchBanner activeBatch={stats?.activeBatch} isLoading={isLoading} isError={isError} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cards.map((card, i) => (
           <motion.button

@@ -6,12 +6,14 @@ import {
   ChevronLeft, ChevronRight, ArrowLeft, Trash2, AlertTriangle,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import ActionsMenu from "@/components/ActionsMenu";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
 import { useAuth } from "@/hooks/useAuth";
 import { downloadCsvWithProgress } from "@/lib/downloadCsv";
 import { Progress } from "@/components/ui/progress";
+import { MAX_BATCHES } from "@contracts/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,7 +74,7 @@ export default function CampCommandantDashboard() {
 }
 
 function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
-  const { data: stats } = trpc.stats.dashboard.useQuery();
+  const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
     { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-green-500", tab: "members" as Tab },
@@ -84,6 +86,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   return (
     <div className="space-y-6">
+      <ActiveBatchBanner activeBatch={stats?.activeBatch} isLoading={isLoading} isError={isError} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card, i) => (
           <motion.button
@@ -567,18 +570,33 @@ function BatchesTab() {
   });
   const [form, setForm] = useState({ name: "", year: new Date().getFullYear(), state: "ondo" as "ondo" | "lagos", description: "" });
   const [showForm, setShowForm] = useState(false);
+  const batchCount = batches?.length ?? 0;
+  const atLimit = batchCount >= MAX_BATCHES;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h2 className="text-lg font-semibold text-gray-800">Batches</h2>
-        <button onClick={() => setShowForm(!showForm)} className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Batches</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{batchCount}/{MAX_BATCHES} batches used</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} disabled={atLimit} title={atLimit ? "Delete an existing batch to create a new one" : undefined} className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus className="w-4 h-4" /> Create Batch
         </button>
       </div>
 
-      {showForm && (
+      {atLimit && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-800">
+            Maximum of {MAX_BATCHES} batches reached. Export any needed data, then ask a Super Admin to delete an existing batch before creating another.
+          </p>
+        </div>
+      )}
+
+      {showForm && !atLimit && (
         <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-white rounded-xl p-6 shadow-sm border space-y-4" onSubmit={(e) => { e.preventDefault(); createBatch.mutate(form, { onSuccess: () => { setShowForm(false); setForm({ name: "", year: new Date().getFullYear(), state: "ondo", description: "" }); } }); }}>
+          {createBatch.error && <p role="alert" className="text-sm text-red-600">{createBatch.error.message}</p>}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input type="text" placeholder="Batch Name (e.g. Batch C)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
             <input type="number" placeholder="Year" value={form.year} onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />

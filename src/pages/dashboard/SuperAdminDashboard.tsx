@@ -15,10 +15,12 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import { useAuth } from "@/hooks/useAuth";
 import { trpc } from "@/providers/trpc";
 import { downloadCsvWithProgress } from "@/lib/downloadCsv";
 import { Progress } from "@/components/ui/progress";
+import { MAX_BATCHES } from "@contracts/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,7 +50,7 @@ export default function SuperAdminDashboard() {
 }
 
 function DashboardOverview() {
-  const { data: stats } = trpc.stats.dashboard.useQuery();
+  const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
     { label: "Total Users", value: stats?.totalUsers || 0, icon: <Users className="w-6 h-6" />, color: "bg-blue-500" },
@@ -59,6 +61,7 @@ function DashboardOverview() {
 
   return (
     <div className="space-y-6">
+      <ActiveBatchBanner activeBatch={stats?.activeBatch} isLoading={isLoading} isError={isError} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card, i) => (
           <motion.div
@@ -76,15 +79,6 @@ function DashboardOverview() {
           </motion.div>
         ))}
       </div>
-
-      {stats?.activeBatch && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border">
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">Active Batch</h3>
-          <p className="text-gray-600">
-            <span className="font-medium">{stats.activeBatch.name}</span> ({stats.activeBatch.state})
-          </p>
-        </div>
-      )}
     </div>
   );
 }
@@ -251,14 +245,14 @@ function BatchesTab() {
   };
 
   const batchCount = batches?.length ?? 0;
-  const atLimit = batchCount >= 3;
+  const atLimit = batchCount >= MAX_BATCHES;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Batches</h2>
-          <p className="text-xs text-gray-400 mt-0.5">{batchCount}/3 batches used</p>
+          <p className="text-xs text-gray-400 mt-0.5">{batchCount}/{MAX_BATCHES} batches used</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
@@ -275,13 +269,14 @@ function BatchesTab() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
-            Maximum of 3 batches reached. You must download and delete an existing batch before creating a new one.
+            Maximum of {MAX_BATCHES} batches reached. You must download and delete an existing batch before creating a new one.
           </p>
         </div>
       )}
 
-      {showForm && (
+      {showForm && !atLimit && (
         <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-white rounded-xl p-6 shadow-sm border space-y-4" onSubmit={(e) => { e.preventDefault(); createBatch.mutate(form, { onSuccess: () => { setShowForm(false); setForm({ name: "", year: new Date().getFullYear(), state: "ondo", description: "" }); } }); }}>
+          {createBatch.error && <p role="alert" className="text-sm text-red-600">{createBatch.error.message}</p>}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input type="text" placeholder="Batch Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
             <input type="number" placeholder="Year" value={form.year} onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
