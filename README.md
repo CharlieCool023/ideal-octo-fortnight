@@ -48,17 +48,3 @@ To stop the local database container:
 npm run db:down
 ```
 
-## Local Seed Accounts
-
-All seeded users use the value of `SEED_DEFAULT_PASSWORD` from `.env`. The seed script refuses to run in production.
-
-| Role | Username | Login |
-| --- | --- | --- |
-| Super Admin | `superadmin` | `http://localhost:3000/super-admin/login` |
-| State Commandant | `statecommandant` | `http://localhost:3000/login` |
-| Camp Commandant | `campcommandant` | `http://localhost:3000/login` |
-| Platoon Instructor | `platoon` | `http://localhost:3000/login` |
-| Man O'War Instructor | `manowar` | `http://localhost:3000/login` |
-| Soldier | `soldier` | `http://localhost:3000/login` |
-
-After login, the app routes each account to the dashboard for its database role. The staff login accepts all non-superadmin roles; the superadmin account must use the separate superadmin endpoint.
