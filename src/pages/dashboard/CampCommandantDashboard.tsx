@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ActiveBatchBanner from "@/components/ActiveBatchBanner";
+import BatchDeletionDialog from "@/components/BatchDeletionDialog";
+import PasswordSettings from "@/components/PasswordSettings";
 import ActionsMenu from "@/components/ActionsMenu";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
@@ -25,7 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type Tab = "dashboard" | "members" | "staff" | "batches" | "print" | "export";
+type Tab = "dashboard" | "members" | "staff" | "batches" | "print" | "export" | "settings";
 type CampStaffRole = "platoon_instructor" | "man_o_war_instructor" | "soldier";
 type CampStaffRoleFilter = "" | CampStaffRole;
 type EvaluationSummary = {
@@ -69,6 +71,7 @@ export default function CampCommandantDashboard() {
       {tab === "batches" && <BatchesTab />}
       {tab === "print" && <PrintTab />}
       {tab === "export" && <ExportTab />}
+      {tab === "settings" && <PasswordSettings />}
     </DashboardLayout>
   );
 }
@@ -570,6 +573,7 @@ function BatchesTab() {
   });
   const [form, setForm] = useState({ name: "", year: new Date().getFullYear(), state: "ondo" as "ondo" | "lagos", description: "" });
   const [showForm, setShowForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const batchCount = batches?.length ?? 0;
   const atLimit = batchCount >= MAX_BATCHES;
 
@@ -589,7 +593,7 @@ function BatchesTab() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
-            Maximum of {MAX_BATCHES} batches reached. Export any needed data, then ask a Super Admin to delete an existing batch before creating another.
+            Maximum of {MAX_BATCHES} batches reached. Download a backup and delete an existing batch before creating another.
           </p>
         </div>
       )}
@@ -636,11 +640,21 @@ function BatchesTab() {
                   <td className="px-4 py-3 text-sm text-gray-600 capitalize hidden sm:table-cell">{b.state}</td>
                   <td className="px-4 py-3">{b.isActive ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Active</span> : <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">Inactive</span>}</td>
                   <td className="px-4 py-3">
-                    {!b.isActive && (
-                      <button onClick={() => activate.mutate({ id: b.id })} disabled={activate.isPending} className="text-green-600 hover:text-green-700 text-sm font-medium disabled:opacity-50">
-                        {activate.isPending ? "Activating..." : "Activate"}
+                    <div className="flex items-center gap-3">
+                      {!b.isActive && (
+                        <button onClick={() => activate.mutate({ id: b.id })} disabled={activate.isPending} className="text-green-600 hover:text-green-700 text-sm font-medium disabled:opacity-50">
+                          {activate.isPending ? "Activating..." : "Activate"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
+                        className="flex items-center gap-1 text-red-500 hover:text-red-700 text-sm font-medium"
+                        title="Download backup and delete batch"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               )) || <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No batches found</td></tr>}
@@ -648,6 +662,12 @@ function BatchesTab() {
           </table>
         </div>
       </div>
+      {deleteTarget && (
+        <BatchDeletionDialog
+          batch={deleteTarget}
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        />
+      )}
     </div>
   );
 }

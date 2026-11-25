@@ -10,16 +10,13 @@ import {
   CheckCircle,
   XCircle,
   Trash2,
-  Lock,
-  Download,
   AlertTriangle,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import BatchDeletionDialog from "@/components/BatchDeletionDialog";
+import PasswordSettings from "@/components/PasswordSettings";
 import ActiveBatchBanner from "@/components/ActiveBatchBanner";
-import { useAuth } from "@/hooks/useAuth";
 import { trpc } from "@/providers/trpc";
-import { downloadCsvWithProgress } from "@/lib/downloadCsv";
-import { Progress } from "@/components/ui/progress";
 import { MAX_BATCHES } from "@contracts/constants";
 import {
   AlertDialog,
@@ -198,51 +195,12 @@ function BatchesTab() {
   const deactivate = trpc.batches.deactivate.useMutation({
     onSuccess: () => { refetch(); utils.stats.dashboard.invalidate(); }
   });
-  const deleteBatch = trpc.batches.delete.useMutation({
-    onSuccess: () => { refetch(); utils.stats.dashboard.invalidate(); }
-  });
 
   const [form, setForm] = useState({ name: "", year: new Date().getFullYear(), state: "ondo" as "ondo" | "lagos", description: "" });
   const [showForm, setShowForm] = useState(false);
 
   // Delete flow state
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
-  const [csvDownloaded, setCsvDownloaded] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  const handleDownloadCsv = async () => {
-    if (!deleteTarget) return;
-    setDownloadError(null);
-    setIsDownloading(true);
-    setDownloadProgress(0);
-    try {
-      await downloadCsvWithProgress(deleteTarget.id, setDownloadProgress);
-      setCsvDownloaded(true);
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  const handleOpenDelete = (id: number, name: string) => {
-    setDeleteTarget({ id, name });
-    setCsvDownloaded(false);
-    setDownloadProgress(0);
-    setDownloadError(null);
-  };
-
-  const handleConfirmDelete = () => {
-    if (!deleteTarget) return;
-    deleteBatch.mutate({ id: deleteTarget.id }, {
-      onSuccess: () => {
-        setDeleteTarget(null);
-        setCsvDownloaded(false);
-      }
-    });
-  };
 
   const batchCount = batches?.length ?? 0;
   const atLimit = batchCount >= MAX_BATCHES;
@@ -331,7 +289,7 @@ function BatchesTab() {
                         </button>
                       )}
                       <button
-                        onClick={() => handleOpenDelete(b.id, b.name)}
+                        onClick={() => setDeleteTarget({ id: b.id, name: b.name })}
                         className="text-red-500 hover:text-red-700"
                         title="Delete batch"
                       >
@@ -346,67 +304,12 @@ function BatchesTab() {
         </div>
       </div>
 
-      {/* Delete confirmation dialog */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setCsvDownloaded(false); } }}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0" />
-              <AlertDialogTitle>Delete Batch: {deleteTarget?.name}</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm text-gray-600">
-                <p>
-                  This will <span className="font-semibold text-red-700">permanently delete</span> this
-                  batch along with <span className="font-semibold">all corps members, evaluations, comments,
-                  and education records</span> in it. This cannot be undone.
-                </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="font-semibold text-amber-800 mb-2">Step 1 — Download the data first</p>
-                  <p className="text-amber-700 text-xs mb-3">
-                    You must download the CSV backup before the delete button is enabled.
-                    This is your only chance to keep a record of this batch.
-                  </p>
-                  <button
-                    onClick={handleDownloadCsv}
-                    disabled={isDownloading || csvDownloaded}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full justify-center ${
-                      csvDownloaded
-                        ? "bg-green-100 text-green-700 cursor-default"
-                        : "bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60"
-                    }`}
-                  >
-                    <Download className="w-4 h-4" />
-                    {isDownloading ? `Downloading... ${downloadProgress}%` : csvDownloaded ? "✓ CSV Downloaded" : "Download CSV Backup"}
-                  </button>
-                  {isDownloading && (
-                    <div className="mt-3">
-                      <Progress value={downloadProgress} />
-                    </div>
-                  )}
-                  {downloadError && <p className="text-xs text-red-600 mt-2">{downloadError}</p>}
-                </div>
-                {csvDownloaded && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <p className="font-semibold text-red-800">Step 2 — Confirm permanent deletion</p>
-                    <p className="text-red-700 text-xs mt-1">The delete button below is now unlocked. Proceed only if you are absolutely certain.</p>
-                  </div>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteBatch.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              disabled={!csvDownloaded || deleteBatch.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {deleteBatch.isPending ? "Deleting..." : "Delete Permanently"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {deleteTarget && (
+        <BatchDeletionDialog
+          batch={deleteTarget}
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -524,69 +427,5 @@ function AllUsersTab() {
 }
 
 function SettingsTab() {
-  const { user } = useAuth();
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
-  const [passwordError, setPasswordError] = useState("");
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
-
-  const changePassword = trpc.customAuth.changePassword.useMutation({
-    onSuccess: () => {
-      setPasswordSuccess(true);
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setTimeout(() => setPasswordSuccess(false), 3000);
-    },
-    onError: (err) => setPasswordError(err.message),
-  });
-
-  const handlePasswordChange = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError("");
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError("Passwords do not match");
-      return;
-    }
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters");
-      return;
-    }
-    changePassword.mutate({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword });
-  };
-
-  return (
-    <div className="max-w-lg space-y-6">
-      <div className="bg-white rounded-xl p-6 shadow-sm border space-y-4">
-        <h3 className="text-lg font-semibold text-gray-800">System Settings</h3>
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 py-2 border-b"><span className="text-gray-500">System Name</span><span className="font-medium sm:text-right">NYSC Camp Evaluation System</span></div>
-          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 py-2 border-b"><span className="text-gray-500">Admin Name</span><span className="font-medium sm:text-right">{user?.fullName}</span></div>
-          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 py-2 border-b"><span className="text-gray-500">Admin Role</span><span className="font-medium sm:text-right">Super Admin</span></div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl p-6 shadow-sm border">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Change Password</h3>
-        {!showPasswordForm ? (
-          <button onClick={() => setShowPasswordForm(true)} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            <Lock className="w-4 h-4" />
-            Change Password
-          </button>
-        ) : (
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            {passwordError && <p className="text-red-500 text-sm">{passwordError}</p>}
-            {passwordSuccess && <p className="text-green-600 text-sm">Password changed successfully!</p>}
-            <input type="password" placeholder="Current Password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
-            <input type="password" placeholder="New Password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
-            <input type="password" placeholder="Confirm New Password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button type="submit" disabled={changePassword.isPending} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-                {changePassword.isPending ? "Changing..." : "Change"}
-              </button>
-              <button type="button" onClick={() => setShowPasswordForm(false)} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
+  return <PasswordSettings />;
 }

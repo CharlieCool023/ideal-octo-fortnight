@@ -48,6 +48,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { label: "Batches", path: "/dashboard/camp-commandant?tab=batches", icon: <BookOpen className="w-5 h-5" /> },
     { label: "Print Reports", path: "/dashboard/camp-commandant?tab=print", icon: <Printer className="w-5 h-5" /> },
     { label: "Export CSV", path: "/dashboard/camp-commandant?tab=export", icon: <Download className="w-5 h-5" /> },
+    { label: "Settings", path: "/dashboard/camp-commandant?tab=settings", icon: <Settings className="w-5 h-5" /> },
   ],
   platoon_instructor: [
     { label: "Dashboard", path: "/dashboard/instructor", icon: <Home className="w-5 h-5" /> },
