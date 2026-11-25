@@ -3,37 +3,43 @@ import { useSearchParams } from "react-router";
 import { motion } from "framer-motion";
 import {
   Users, BookOpen, Printer, Search, Eye, ArrowLeft, Shield,
-  CheckCircle, XCircle,
+  CheckCircle, XCircle, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
+import { useAuth } from "@/hooks/useAuth";
 
 type Tab = "dashboard" | "members" | "batches" | "print";
+type MemberFilter = "all" | "in_progress" | "fully_evaluated" | "commented";
 
 export default function StateCommandantDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get("tab") || "dashboard") as Tab;
-  const setTab = (t: Tab) => setSearchParams({ tab: t });
+  const setTab = (t: Tab, filter?: MemberFilter) => setSearchParams(filter && filter !== "all" ? { tab: t, status: filter } : { tab: t });
+  const filter = (searchParams.get("status") as MemberFilter | null) ?? "all";
 
   return (
     <DashboardLayout requiredRole="state_commandant" title={tab === "dashboard" ? "State Commandant" : tab.charAt(0).toUpperCase() + tab.slice(1)}>
       {tab === "dashboard" && <DashboardOverview onNavigate={setTab} />}
-      {tab === "members" && <MembersTab />}
+      {tab === "members" && <MembersTab status={filter} />}
       {tab === "batches" && <BatchesTab />}
       {tab === "print" && <PrintTab />}
     </DashboardLayout>
   );
 }
 
-function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab, filter?: MemberFilter) => void }) {
   const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
-    { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-blue-500", tab: "members" as Tab },
-    { label: "Total Batches", value: stats?.totalBatches || 0, icon: <BookOpen className="w-6 h-6" />, color: "bg-amber-500", tab: "batches" as Tab },
-    { label: "Print Reports", value: "View", icon: <Printer className="w-6 h-6" />, color: "bg-purple-500", tab: "print" as Tab },
+    { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-blue-500", tab: "members" as Tab, filter: "all" as MemberFilter },
+    { label: "Started Evaluation", value: stats?.evaluatedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-green-500", tab: "members" as Tab, filter: "in_progress" as MemberFilter },
+    { label: "Fully Evaluated", value: stats?.completedEvaluationCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-cyan-600", tab: "members" as Tab, filter: "fully_evaluated" as MemberFilter },
+    { label: "Comments", value: stats?.commentedCount || 0, icon: <Users className="w-6 h-6" />, color: "bg-purple-500", tab: "members" as Tab, filter: "commented" as MemberFilter },
+    { label: "Total Batches", value: stats?.totalBatches || 0, icon: <BookOpen className="w-6 h-6" />, color: "bg-amber-500", tab: "batches" as Tab, filter: "all" as MemberFilter },
+    { label: "Print Reports", value: "View", icon: <Printer className="w-6 h-6" />, color: "bg-slate-700", tab: "print" as Tab, filter: "all" as MemberFilter },
   ];
 
   return (
@@ -45,14 +51,14 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           Read-only access. You can view reports and data but cannot modify them.
         </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cards.map((card, i) => (
           <motion.button
             key={card.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            onClick={() => onNavigate(card.tab)}
+            onClick={() => onNavigate(card.tab, card.filter)}
             className="bg-white rounded-xl p-6 shadow-sm border text-left hover:shadow-md transition-shadow"
           >
             <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center text-white mb-4`}>{card.icon}</div>
@@ -65,14 +71,17 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   );
 }
 
-function MembersTab() {
+function MembersTab({ status = "all" }: { status?: MemberFilter }) {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
   const [selectedMember, setSelectedMember] = useState<number | null>(null);
-  const scrollContainerRef = useScrollPosition({ key: "state-commandant-members-list" });
+  const scrollContainerRef = useScrollPosition({ key: `state-commandant-members-list-${page}` });
 
   const { data: members } = trpc.corpsMembers.list.useQuery({
     search: search || undefined,
-    limit: 50,
+    evaluationStatus: status === "all" ? undefined : status,
+    limit: 51,
+    offset: page * 50,
   });
 
   const { data: memberDetail } = trpc.corpsMembers.get.useQuery(
@@ -95,8 +104,15 @@ function MembersTab() {
     <div className="space-y-4">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input type="text" placeholder="Search members..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
+        <input type="text" placeholder="Search members..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
       </div>
+      {members && (members.length > 50 || page > 0) && (
+        <div className="flex items-center justify-between rounded-lg border bg-white px-4 py-3">
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /> Previous</button>
+          <span className="text-sm text-gray-500">Page {page + 1}</span>
+          <button onClick={() => setPage(page + 1)} disabled={members.length <= 50} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Next <ChevronRight className="w-4 h-4" /></button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col max-h-[calc(100vh-240px)]">
         <div ref={scrollContainerRef} className="overflow-y-auto flex-1">
@@ -104,7 +120,7 @@ function MembersTab() {
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State Code</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Platoon</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">PI</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MOW</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead>
               <tbody className="divide-y divide-gray-100">
-                {members?.map((m) => (
+                {members && members.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No members found</td></tr> : members?.slice(0, 50).map((m) => (
                   <tr key={m.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-800">{m.surname} {m.otherNames}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{m.stateCode}</td>
@@ -113,7 +129,7 @@ function MembersTab() {
                     <td className="px-4 py-3">{m.evaluationStatus.manOWar ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}</td>
                     <td className="px-4 py-3"><button onClick={() => setSelectedMember(m.id)} className="text-blue-600 hover:text-blue-700"><Eye className="w-4 h-4" /></button></td>
                   </tr>
-                )) || <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No members found</td></tr>}
+                ))}
               </tbody>
             </table>
           </div>
@@ -232,7 +248,9 @@ function MemberDetailView({ member }: { member: any }) {
 }
 
 function BatchesTab() {
+  const { user } = useAuth();
   const { data: batches } = trpc.batches.list.useQuery();
+  const visibleBatches = batches?.filter((batch) => batch.state === user?.state);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -241,14 +259,15 @@ function BatchesTab() {
         <table className="w-full">
           <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th></tr></thead>
           <tbody className="divide-y divide-gray-100">
-            {batches?.map((b) => (
+            {visibleBatches?.map((b) => (
               <tr key={b.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-medium text-gray-800">{b.name}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{b.year}</td>
                 <td className="px-4 py-3 text-sm text-gray-600 capitalize">{b.state}</td>
                 <td className="px-4 py-3">{b.isActive ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">Active</span> : <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">Inactive</span>}</td>
               </tr>
-            )) || <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No batches found</td></tr>}
+            ))}
+            {visibleBatches && visibleBatches.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No batches found for your state</td></tr>}
           </tbody>
         </table>
       </div>
@@ -257,7 +276,7 @@ function BatchesTab() {
 }
 
 function PrintTab() {
-  const { data: members } = trpc.corpsMembers.list.useQuery({});
+  const { data: members } = trpc.corpsMembers.list.useQuery({ limit: 5000 });
 
   return (
     <div className="space-y-6">

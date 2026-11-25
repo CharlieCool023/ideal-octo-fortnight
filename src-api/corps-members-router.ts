@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, publicQuery, staffQuery, adminOrCommandantQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { corpsMembers, higherInstitutions, evaluations, comments, commandantComments, batches } from "@db/schema";
 import { eq, like, and, or, desc, sql } from "drizzle-orm";
+import { normalizePassportPhotoDataUrl } from "./lib/image-validation";
 
 export const corpsMembersRouter = createRouter({
   // List corps members with filters
@@ -13,7 +15,10 @@ export const corpsMembersRouter = createRouter({
           search: z.string().optional(),
           platoon: z.number().optional(),
           batchId: z.number().optional(),
-          evaluationStatus: z.string().optional(),
+          evaluationStatus: z.enum([
+            "pi_evaluated", "pi_pending", "mow_evaluated", "mow_pending",
+            "fully_evaluated", "in_progress", "commented", "not_commented",
+          ]).optional(),
           limit: z.number().default(50),
           offset: z.number().default(0),
         })
@@ -34,8 +39,15 @@ export const corpsMembersRouter = createRouter({
         // No active batch - return empty list with message
         return [];
       }
+      if (
+        ctx.staffUser!.role === "state_commandant" &&
+        (!ctx.staffUser!.state || activeBatch.state !== ctx.staffUser!.state)
+      ) return [];
 
       conditions.push(eq(corpsMembers.batchId, activeBatch.id));
+      if (ctx.staffUser!.role === "state_commandant") {
+        conditions.push(eq(corpsMembers.state, ctx.staffUser!.state as "ondo" | "lagos"));
+      }
 
       if (input?.search) {
         conditions.push(
@@ -49,6 +61,24 @@ export const corpsMembersRouter = createRouter({
       }
       if (input?.platoon) {
         conditions.push(eq(corpsMembers.platoon, input.platoon));
+      }
+
+      const memberId = sql`${corpsMembers.id}`;
+      const piEvaluation = sql`EXISTS (SELECT 1 FROM ${evaluations} e WHERE e.corps_member_id = ${memberId} AND e.evaluator_role = 'platoon_instructor')`;
+      const mowEvaluation = sql`EXISTS (SELECT 1 FROM ${evaluations} e WHERE e.corps_member_id = ${memberId} AND e.evaluator_role = 'man_o_war_instructor')`;
+      const commentOwner = ctx.staffUser!.role === "soldier"
+        ? sql`AND c.soldier_id = ${ctx.staffUser!.id}`
+        : sql``;
+      const soldierComment = sql`EXISTS (SELECT 1 FROM ${comments} c WHERE c.corps_member_id = ${memberId} ${commentOwner})`;
+      switch (input?.evaluationStatus) {
+        case "pi_evaluated": conditions.push(piEvaluation); break;
+        case "pi_pending": conditions.push(sql`NOT ${piEvaluation}`); break;
+        case "mow_evaluated": conditions.push(mowEvaluation); break;
+        case "mow_pending": conditions.push(sql`NOT ${mowEvaluation}`); break;
+        case "fully_evaluated": conditions.push(piEvaluation, mowEvaluation); break;
+        case "in_progress": conditions.push(sql`(${piEvaluation} OR ${mowEvaluation})`); break;
+        case "commented": conditions.push(soldierComment); break;
+        case "not_commented": conditions.push(sql`NOT ${soldierComment}`); break;
       }
 
       // Instructors/soldiers only see their platoon
@@ -93,7 +123,11 @@ export const corpsMembersRouter = createRouter({
           .where(sql`corps_member_id IN (${sql.raw(idList)}) AND evaluator_role = 'man_o_war_instructor'`),
         db.select({ corpsMemberId: comments.corpsMemberId })
           .from(comments)
-          .where(sql`corps_member_id IN (${sql.raw(idList)})`),
+          .where(
+            ctx.staffUser!.role === "soldier"
+              ? and(sql`corps_member_id IN (${sql.raw(idList)})`, eq(comments.soldierId, ctx.staffUser!.id))
+              : sql`corps_member_id IN (${sql.raw(idList)})`
+          ),
         db.select({ corpsMemberId: commandantComments.corpsMemberId })
           .from(commandantComments)
           .where(sql`corps_member_id IN (${sql.raw(idList)})`),
@@ -121,7 +155,7 @@ export const corpsMembersRouter = createRouter({
   // Get single corps member with all details
   get: staffQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = getDb();
       
       // Verify active batch exists
@@ -138,6 +172,15 @@ export const corpsMembersRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || !activeBatch || member.batchId !== activeBatch.id) {
+        return null;
+      }
+
+      const user = ctx.staffUser!;
+      if (user.role === "state_commandant" && (!user.state || activeBatch.state !== user.state || member.state !== user.state)) return null;
+      if (
+        (user.role === "platoon_instructor" || user.role === "man_o_war_instructor" || user.role === "soldier") &&
+        member.platoon !== (user.assignedPlatoon || 0)
+      ) {
         return null;
       }
 
@@ -202,7 +245,10 @@ export const corpsMembersRouter = createRouter({
   register: publicQuery
     .input(
       z.object({
-        passportPhoto: z.string().optional(),
+        passportPhoto: z
+          .string()
+          .max(20_000, "Passport photo is too large")
+          .optional(),
         surname: z.string().min(1),
         otherNames: z.string().min(1),
         changedName: z.number().default(0),
@@ -238,6 +284,16 @@ export const corpsMembersRouter = createRouter({
       })
     )
     .mutation(async ({ input }) => {
+      const passportPhoto = input.passportPhoto
+        ? await normalizePassportPhotoDataUrl(input.passportPhoto)
+        : undefined;
+      if (input.passportPhoto && !passportPhoto) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Passport photo must be a valid JPEG image under 1 megapixel",
+        });
+      }
+
       const db = getDb();
 
       // Get active batch (required for registration)
@@ -273,7 +329,7 @@ export const corpsMembersRouter = createRouter({
       }
 
       const result = await db.insert(corpsMembers).values({
-        passportPhoto: input.passportPhoto,
+        passportPhoto,
         surname: input.surname.toUpperCase(),
         otherNames: input.otherNames.toUpperCase(),
         changedName: input.changedName as 0 | 1,

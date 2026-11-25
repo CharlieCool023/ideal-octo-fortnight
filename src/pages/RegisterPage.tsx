@@ -30,6 +30,13 @@ type FormData = {
   institutions: Institution[];
 };
 
+const ALLOWED_PHOTO_TYPES = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} as const;
+
 const emptyInstitution: Institution = {
   institutionName: "",
   startDate: "",
@@ -75,7 +82,7 @@ export default function RegisterPage() {
   });
 
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
@@ -93,7 +100,11 @@ export default function RegisterPage() {
           }
           canvas.width = w;
           canvas.height = h;
-          const ctx = canvas.getContext("2d")!;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Photo could not be processed"));
+            return;
+          }
           ctx.drawImage(img, 0, 0, w, h);
 
           // Start at quality 0.5, step down until under target
@@ -105,8 +116,10 @@ export default function RegisterPage() {
           }
           resolve(compressed);
         };
+        img.onerror = () => reject(new Error("The selected file is not a readable image"));
         img.src = e.target?.result as string;
       };
+      reader.onerror = () => reject(new Error("The selected file could not be read"));
       reader.readAsDataURL(file);
     });
   };
@@ -114,13 +127,31 @@ export default function RegisterPage() {
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrors({ ...errors, passportPhoto: "File too large (max 5MB)" });
+    const extension = file.name.split(".").pop()?.toLowerCase() as keyof typeof ALLOWED_PHOTO_TYPES | undefined;
+    const expectedType = extension ? ALLOWED_PHOTO_TYPES[extension] : undefined;
+    if (!expectedType || file.type !== expectedType) {
+      setErrors((current) => ({
+        ...current,
+        passportPhoto: "Choose a JPEG, PNG, or WebP photo with a matching file extension",
+      }));
+      e.target.value = "";
       return;
     }
-    const compressed = await compressImage(file);
-    setForm({ ...form, passportPhoto: compressed });
-    setErrors({ ...errors, passportPhoto: "" });
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors((current) => ({ ...current, passportPhoto: "File too large (max 5MB)" }));
+      e.target.value = "";
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      setForm((current) => ({ ...current, passportPhoto: compressed }));
+      setErrors((current) => ({ ...current, passportPhoto: "" }));
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        passportPhoto: error instanceof Error ? error.message : "The selected file is not a readable image",
+      }));
+    }
   };
 
   const validateStep1 = (): boolean => {
@@ -289,7 +320,7 @@ export default function RegisterPage() {
                     <label className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
                       <Upload className="w-4 h-4" />
                       <span className="text-sm font-medium">Upload Photo</span>
-                      <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                      <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handlePhotoChange} className="hidden" />
                     </label>
                   </div>
                   {errors.passportPhoto && <p className="text-red-500 text-xs mt-1">{errors.passportPhoto}</p>}

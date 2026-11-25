@@ -36,8 +36,8 @@ export default function PasswordSettings() {
       setPasswordError("Passwords do not match");
       return;
     }
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters");
+    if (passwordForm.newPassword.length < 12) {
+      setPasswordError("Password must be at least 12 characters");
       return;
     }
     changePassword.mutate({
@@ -108,22 +108,22 @@ export default function PasswordSettings() {
             />
             <input
               type="password"
+              minLength={12}
               autoComplete="new-password"
               placeholder="New Password"
               value={passwordForm.newPassword}
               onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500"
-              minLength={6}
               required
             />
             <input
               type="password"
+              minLength={12}
               autoComplete="new-password"
               placeholder="Confirm New Password"
               value={passwordForm.confirmPassword}
               onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500"
-              minLength={6}
               required
             />
             <div className="flex flex-col sm:flex-row gap-3">

@@ -2,38 +2,40 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { motion } from "framer-motion";
 import {
-  Users, ClipboardList, Printer, Search, ArrowLeft, CheckCircle, Check,
+  Users, ClipboardList, Printer, Search, ArrowLeft, CheckCircle, Check, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ActiveBatchBanner from "@/components/ActiveBatchBanner";
 import { trpc } from "@/providers/trpc";
 import { EVALUATION_CATEGORIES, SCORE_LABELS } from "@/const";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
+import { useAuth } from "@/hooks/useAuth";
 
 type Tab = "dashboard" | "platoon" | "evaluations" | "print";
+type MemberFilter = "all" | "mow_evaluated" | "mow_pending";
 
 export default function ManOWarDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get("tab") || "dashboard") as Tab;
-  const setTab = (t: Tab) => setSearchParams({ tab: t });
+  const setTab = (t: Tab, filter?: MemberFilter) => setSearchParams(filter && filter !== "all" ? { tab: t, status: filter } : { tab: t });
+  const filter = (searchParams.get("status") as MemberFilter | null) ?? (tab === "evaluations" ? "mow_evaluated" : "all");
 
   return (
     <DashboardLayout requiredRole="man_o_war_instructor" title={tab === "dashboard" ? "Man O'War Instructor" : tab.charAt(0).toUpperCase() + tab.slice(1)}>
       {tab === "dashboard" && <DashboardOverview onNavigate={setTab} />}
-      {tab === "platoon" && <PlatoonTab />}
-      {tab === "evaluations" && <PlatoonTab />}
+      {(tab === "platoon" || tab === "evaluations") && <PlatoonTab status={filter} />}
       {tab === "print" && <PrintTab />}
     </DashboardLayout>
   );
 }
 
-function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab, filter?: MemberFilter) => void }) {
   const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
-    { label: "Total Members", value: stats?.totalMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-orange-500", tab: "platoon" as Tab },
-    { label: "Evaluated", value: stats?.processedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-green-500", tab: "evaluations" as Tab },
-    { label: "Pending", value: stats?.pendingCount || 0, icon: <ClipboardList className="w-6 h-6" />, color: "bg-amber-500", tab: "platoon" as Tab },
+    { label: "Total Members", value: stats?.totalMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-orange-500", tab: "platoon" as Tab, filter: "all" as MemberFilter },
+    { label: "Evaluated", value: stats?.processedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-green-500", tab: "evaluations" as Tab, filter: "mow_evaluated" as MemberFilter },
+    { label: "Pending", value: stats?.pendingCount || 0, icon: <ClipboardList className="w-6 h-6" />, color: "bg-amber-500", tab: "platoon" as Tab, filter: "mow_pending" as MemberFilter },
   ];
 
   return (
@@ -46,7 +48,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            onClick={() => onNavigate(card.tab)}
+            onClick={() => onNavigate(card.tab, card.filter)}
             className="bg-white rounded-xl p-6 shadow-sm border text-left hover:shadow-md transition-shadow"
           >
             <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center text-white mb-4`}>{card.icon}</div>
@@ -59,13 +61,17 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   );
 }
 
-function PlatoonTab() {
+function PlatoonTab({ status = "all" }: { status?: MemberFilter }) {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
   const [selectedMember, setSelectedMember] = useState<number | null>(null);
   const scrollContainerRef = useScrollPosition({ key: "man-owar-platoon-list" });
 
   const { data: members, refetch } = trpc.corpsMembers.list.useQuery({
     search: search || undefined,
+    evaluationStatus: status === "all" ? undefined : status,
+    limit: 51,
+    offset: page * 50,
   });
 
   const { data: existingEval } = trpc.manOwarEvaluations.get.useQuery(
@@ -90,12 +96,12 @@ function PlatoonTab() {
     <div className="space-y-4 flex flex-col max-h-[calc(100vh-200px)]">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input type="text" placeholder="Search members..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
+        <input type="text" placeholder="Search members..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
       </div>
 
       <div ref={scrollContainerRef} className="overflow-y-auto flex-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
-          {members?.map((m) => (
+          {members?.slice(0, 50).map((m) => (
             <motion.button
               key={m.id}
               initial={{ opacity: 0 }}
@@ -118,9 +124,19 @@ function PlatoonTab() {
                 <p className="mt-2 text-sm font-medium text-green-600">Score: {m.evaluationStatus.mowScore}</p>
               )}
             </motion.button>
-          )) || <p className="text-gray-400 text-center py-8 col-span-full">No members found</p>}
+          ))}
+          {members && members.length === 0 && (
+            <p className="text-gray-400 text-center py-8 col-span-full">{status === "mow_evaluated" ? "No evaluations submitted yet" : status === "mow_pending" ? "No pending evaluations" : "No members found"}</p>
+          )}
         </div>
       </div>
+      {members && (members.length > 50 || page > 0) && (
+        <div className="flex items-center justify-between rounded-lg border bg-white px-4 py-3">
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /> Previous</button>
+          <span className="text-sm text-gray-500">Page {page + 1}</span>
+          <button onClick={() => setPage(page + 1)} disabled={members.length <= 50} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Next <ChevronRight className="w-4 h-4" /></button>
+        </div>
+      )}
     </div>
   );
 }
@@ -141,6 +157,7 @@ function EvaluationForm({
   const submitEval = trpc.manOwarEvaluations.submit.useMutation({
     onSuccess: () => {
       utils.manOwarEvaluations.get.invalidate();
+      utils.stats.dashboard.invalidate();
       setShowSuccess(true);
       window.setTimeout(onBack, 1500);
     }
@@ -283,11 +300,12 @@ function SuccessPopup({ title, message }: { title: string; message: string }) {
 
 function PrintTab() {
   const { data: activeBatch } = trpc.batches.getActive.useQuery();
-  const platoon = 1;
+  const { user } = useAuth();
+  const platoon = user?.assignedPlatoon ?? 0;
 
   const { data: report } = trpc.export.platoonReport.useQuery(
     { platoon },
-    { enabled: !!activeBatch }
+    { enabled: !!activeBatch && platoon > 0 }
   );
 
   return (

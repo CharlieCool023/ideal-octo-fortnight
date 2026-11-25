@@ -178,10 +178,12 @@ export default function DashboardLayout({
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 space-y-1">
           {navItems.map((item) => {
-            const isActive =
-              location.pathname === item.path.split("?")[0] &&
-              (item.path.includes("?")
-                ? location.search === item.path.split("?")[1]?.replace("?", "?")
+            const [itemPath, itemQuery] = item.path.split("?");
+            const expectedParams = new URLSearchParams(itemQuery || "");
+            const actualParams = new URLSearchParams(location.search);
+            const isActive = location.pathname === itemPath &&
+              (itemQuery
+                ? [...expectedParams.entries()].every(([key, value]) => actualParams.get(key) === value)
                 : !location.search);
 
             return (

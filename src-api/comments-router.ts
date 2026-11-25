@@ -8,7 +8,7 @@ export const commentsRouter = createRouter({
   // Get comments for a corps member
   list: soldierQuery
     .input(z.object({ corpsMemberId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = getDb();
 
       // Verify corps member belongs to active batch
@@ -27,6 +27,7 @@ export const commentsRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || member.batchId !== activeBatch.id) return [];
+      if (ctx.staffUser!.role === "soldier" && member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)) return [];
 
       return db
         .select()
@@ -56,6 +57,7 @@ export const commentsRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || member.batchId !== activeBatch.id) return null;
+      if (ctx.staffUser!.role === "soldier" && member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)) return null;
 
       return db
         .select()
@@ -97,6 +99,9 @@ export const commentsRouter = createRouter({
 
       if (!member || member.batchId !== activeBatch.id) {
         throw new Error("Corps member not found in active batch");
+      }
+      if (ctx.staffUser!.role === "soldier" && member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)) {
+        throw new Error("Corps member is outside your assigned platoon");
       }
 
       const existing = await db

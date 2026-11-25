@@ -1,9 +1,17 @@
-import { getDb } from "../api/queries/connection";
+import { getDb } from "../src-api/queries/connection";
 import { staffUsers, batches } from "./schema";
 import { eq } from "drizzle-orm";
-import { hashPassword } from "../api/lib/custom-auth";
+import { hashPassword } from "../src-api/lib/custom-auth";
 
 async function seed() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to seed default staff accounts in production.");
+  }
+  const seedPassword = process.env.SEED_DEFAULT_PASSWORD;
+  if (!seedPassword || seedPassword.length < 12 || seedPassword.length > 72) {
+    throw new Error("Set SEED_DEFAULT_PASSWORD to a local password between 12 and 72 characters before seeding.");
+  }
+
   const db = getDb();
   console.log("Seeding database...");
 
@@ -30,7 +38,7 @@ async function seed() {
     .where(eq(batches.name, "Batch A 2025"))
     .then((rows) => rows[0]);
 
-  const defaultPasswordHash = await hashPassword("admin123");
+  const defaultPasswordHash = await hashPassword(seedPassword);
   const defaultUsers: Array<typeof staffUsers.$inferInsert> = [
     {
       fullName: "Super Administrator",
@@ -97,7 +105,7 @@ async function seed() {
 
     if (!existingUser) {
       await db.insert(staffUsers).values(user);
-      console.log(`Staff user created: ${user.username} / admin123`);
+      console.log(`Staff user created: ${user.username}`);
     }
   }
 

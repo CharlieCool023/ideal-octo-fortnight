@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import * as cookie from "cookie";
 import { createRouter, publicQuery, staffQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -10,18 +11,38 @@ import {
   signStaffToken,
 } from "./lib/custom-auth";
 import { getSessionCookieOptions } from "./lib/cookies";
+import { consumeRateLimit, getClientAddress, loginRateLimitKeys } from "./lib/rate-limit";
+
+const DUMMY_PASSWORD_HASH = "$2b$12$iv7TQhsm./vSd/QbCZ7RMe2M.DlHdw5TeIlyV3WFmXQC5IATPelDa";
 
 export const customAuthRouter = createRouter({
   // Staff login
   login: publicQuery
     .input(
       z.object({
-        username: z.string().min(1, "Username is required"),
-        password: z.string().min(1, "Password is required"),
+        username: z.string().trim().min(1, "Username is required").max(100),
+        password: z.string().min(1, "Password is required").max(72),
         portal: z.enum(["staff", "super_admin"]).default("staff"),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const address = getClientAddress(ctx.req.headers);
+      const keys = loginRateLimitKeys(address, input.username);
+      const now = Date.now();
+      const accountLimit = consumeRateLimit(keys.account, 5, 15 * 60 * 1000, now);
+      const addressLimit = consumeRateLimit(keys.ip, 30, 15 * 60 * 1000, now);
+      if (!accountLimit.allowed || !addressLimit.allowed) {
+        const retryAfterSeconds = Math.max(
+          accountLimit.allowed ? 0 : accountLimit.retryAfterSeconds,
+          addressLimit.allowed ? 0 : addressLimit.retryAfterSeconds,
+        );
+        ctx.resHeaders.set("Retry-After", String(retryAfterSeconds));
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many login attempts. Try again later.",
+        });
+      }
+
       const db = getDb();
       const user = await db
         .select()
@@ -29,30 +50,18 @@ export const customAuthRouter = createRouter({
         .where(eq(staffUsers.username, input.username))
         .then((rows) => rows[0])
         .catch(() => {
-          throw new Error(
-            "Database is not available. Check DATABASE_URL, then run npm run db:push and npm run db:seed."
-          );
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Login is temporarily unavailable.",
+          });
         });
 
-      if (!user) {
-        throw new Error("Invalid username or password");
-      }
-
-      if (!user.isActive) {
-        throw new Error("Account is deactivated");
-      }
-
-      if (input.portal === "staff" && user.role === "super_admin") {
-        throw new Error("Super admin must login from the superadmin endpoint");
-      }
-
-      if (input.portal === "super_admin" && user.role !== "super_admin") {
-        throw new Error("Use the staff login page for this account");
-      }
-
-      const valid = await verifyPassword(input.password, user.passwordHash);
-      if (!valid) {
-        throw new Error("Invalid username or password");
+      const valid = await verifyPassword(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+      const portalMatches = input.portal === "super_admin"
+        ? user?.role === "super_admin"
+        : user?.role !== "super_admin";
+      if (!user || !user.isActive || !valid || !portalMatches) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password" });
       }
 
       const token = await signStaffToken({
@@ -122,7 +131,7 @@ export const customAuthRouter = createRouter({
     .input(
       z.object({
         currentPassword: z.string().min(1),
-        newPassword: z.string().min(6),
+        newPassword: z.string().min(12, "Password must be at least 12 characters").max(72),
       })
     )
     .mutation(async ({ input, ctx }) => {

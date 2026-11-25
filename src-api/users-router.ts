@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { createRouter, staffQuery, adminOrCommandantQuery } from "./middleware";
+import { createRouter, adminOrCommandantQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { staffUsers } from "@db/schema";
 import { eq, like, and, or, inArray } from "drizzle-orm";
@@ -84,23 +84,54 @@ export const usersRouter = createRouter({
         conditions.push(inArray(staffUsers.role, [...CAMP_MANAGED_ROLES]));
       }
 
+      const userFields = {
+        id: staffUsers.id,
+        fullName: staffUsers.fullName,
+        username: staffUsers.username,
+        role: staffUsers.role,
+        assignedPlatoon: staffUsers.assignedPlatoon,
+        assignedBatchId: staffUsers.assignedBatchId,
+        state: staffUsers.state,
+        isActive: staffUsers.isActive,
+        createdAt: staffUsers.createdAt,
+        updatedAt: staffUsers.updatedAt,
+      };
       const query = conditions.length > 0
-        ? db.select().from(staffUsers).where(and(...conditions))
-        : db.select().from(staffUsers);
+        ? db.select(userFields).from(staffUsers).where(and(...conditions))
+        : db.select(userFields).from(staffUsers);
 
       return query;
     }),
 
   // Get single user
-  get: staffQuery
+  get: adminOrCommandantQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = getDb();
-      return db
-        .select()
+      const target = await db
+        .select({
+          id: staffUsers.id,
+          fullName: staffUsers.fullName,
+          username: staffUsers.username,
+          role: staffUsers.role,
+          assignedPlatoon: staffUsers.assignedPlatoon,
+          assignedBatchId: staffUsers.assignedBatchId,
+          state: staffUsers.state,
+          isActive: staffUsers.isActive,
+          createdAt: staffUsers.createdAt,
+          updatedAt: staffUsers.updatedAt,
+        })
         .from(staffUsers)
         .where(eq(staffUsers.id, input.id))
         .then((rows) => rows[0] || null);
+      if (
+        ctx.staffUser!.role === "camp_commandant" &&
+        target &&
+        !isCampManagedRole(target.role)
+      ) {
+        return null;
+      }
+      return target;
     }),
 
   // Create staff user (admin/commandant only)
@@ -109,7 +140,7 @@ export const usersRouter = createRouter({
       z.object({
         fullName: z.string().min(1),
         username: z.string().min(3),
-        password: z.string().min(6, "Password must be at least 6 characters"),
+        password: z.string().min(12, "Password must be at least 12 characters").max(72),
         role: z.enum(STAFF_ROLES).exclude(["super_admin"]),
         assignedPlatoon: z.number().min(1).max(10).optional(),
         assignedBatchId: z.number().optional(),

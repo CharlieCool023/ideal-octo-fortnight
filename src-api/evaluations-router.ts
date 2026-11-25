@@ -28,6 +28,10 @@ export const evaluationsRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || member.batchId !== activeBatch.id) return null;
+      if (
+        (ctx.staffUser!.role === "platoon_instructor" || ctx.staffUser!.role === "man_o_war_instructor") &&
+        member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)
+      ) return null;
 
       return db
         .select()
@@ -78,6 +82,12 @@ export const evaluationsRouter = createRouter({
 
       if (!member || member.batchId !== activeBatch.id) {
         throw new Error("Corps member not found in active batch");
+      }
+      if (
+        (ctx.staffUser!.role === "platoon_instructor" || ctx.staffUser!.role === "man_o_war_instructor") &&
+        member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)
+      ) {
+        throw new Error("Corps member is outside your assigned platoon");
       }
 
       // Calculate overall average
@@ -167,6 +177,10 @@ export const manOwarEvaluationsRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || member.batchId !== activeBatch.id) return null;
+      if (
+        (ctx.staffUser!.role === "platoon_instructor" || ctx.staffUser!.role === "man_o_war_instructor") &&
+        member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)
+      ) return null;
 
       return db
         .select()
@@ -215,6 +229,12 @@ export const manOwarEvaluationsRouter = createRouter({
 
       if (!member || member.batchId !== activeBatch.id) {
         throw new Error("Corps member not found in active batch");
+      }
+      if (
+        (ctx.staffUser!.role === "platoon_instructor" || ctx.staffUser!.role === "man_o_war_instructor") &&
+        member.platoon !== (ctx.staffUser!.assignedPlatoon || 0)
+      ) {
+        throw new Error("Corps member is outside your assigned platoon");
       }
 
       const scores = [

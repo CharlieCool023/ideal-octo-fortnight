@@ -27,7 +27,7 @@ A local NYSC camp evaluation app for corps member registration, staff dashboards
    npm run db:up
    ```
 
-4. Push the schema and seed local accounts:
+4. Set `SEED_DEFAULT_PASSWORD` in `.env` to a local password with 12–72 characters, then push the schema and seed local accounts:
 
    ```bash
    npm run db:push
@@ -48,9 +48,9 @@ To stop the local database container:
 npm run db:down
 ```
 
-## Default Local Credentials
+## Local Seed Accounts
 
-All seeded users use password `admin123`.
+All seeded users use the value of `SEED_DEFAULT_PASSWORD` from `.env`. The seed script refuses to run in production.
 
 | Role | Username | Login |
 | --- | --- | --- |

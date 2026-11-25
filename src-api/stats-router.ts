@@ -22,11 +22,17 @@ export const statsRouter = createRouter({
     const db = getDb();
     const user = ctx.staffUser!;
 
-    const activeBatch = await db
-      .select()
-      .from(batches)
-      .where(eq(batches.isActive, 1))
-      .then((rows) => rows[0] || null);
+    const activeBatch = user.role === "state_commandant" && !user.state
+      ? null
+      : await db
+          .select()
+          .from(batches)
+          .where(
+            user.role === "state_commandant"
+              ? and(eq(batches.isActive, 1), eq(batches.state, user.state as "ondo" | "lagos"))
+              : eq(batches.isActive, 1)
+          )
+          .then((rows) => rows[0] || null);
 
     const stats: DashboardStats = {
       activeBatch: activeBatch
@@ -51,21 +57,33 @@ export const statsRouter = createRouter({
     if (user.role === "camp_commandant" || user.role === "state_commandant") {
       const [totalMembers, totalBatches] = await Promise.all([
         activeBatch
-          ? db.select({ count: sql<number>`count(*)` }).from(corpsMembers).where(eq(corpsMembers.batchId, activeBatch.id)).then((r) => r[0].count)
+          ? db.select({ count: sql<number>`count(*)` }).from(corpsMembers).where(
+              user.role === "state_commandant"
+                ? and(eq(corpsMembers.batchId, activeBatch.id), eq(corpsMembers.state, user.state as "ondo" | "lagos"))
+                : eq(corpsMembers.batchId, activeBatch.id)
+            ).then((r) => r[0].count)
           : Promise.resolve(0),
-        db.select({ count: sql<number>`count(*)` }).from(batches).then((r) => r[0].count),
+        user.role === "state_commandant"
+          ? user.state
+            ? db.select({ count: sql<number>`count(*)` }).from(batches).where(eq(batches.state, user.state as "ondo" | "lagos")).then((r) => r[0].count)
+            : Promise.resolve(0)
+          : db.select({ count: sql<number>`count(*)` }).from(batches).then((r) => r[0].count),
       ]);
 
       stats.totalCorpsMembers = totalMembers;
       stats.totalBatches = totalBatches;
 
       if (activeBatch) {
+        const stateFilter = user.role === "state_commandant"
+          ? sql`AND cm.state = ${user.state}`
+          : sql``;
         // Count members with any instructor evaluation, plus those completed by both instructor roles.
         const evaluatedCount = await db
           .select({ count: sql<number>`count(distinct cm.id)` })
           .from(sql`${corpsMembers} cm`)
           .where(sql`
             cm.batch_id = ${activeBatch.id}
+            ${stateFilter}
             AND EXISTS (SELECT 1 FROM ${evaluations} e WHERE e.corps_member_id = cm.id)
           `)
           .then((r) => r[0].count);
@@ -75,6 +93,7 @@ export const statsRouter = createRouter({
           .from(sql`${corpsMembers} cm`)
           .where(sql`
             cm.batch_id = ${activeBatch.id}
+            ${stateFilter}
             AND EXISTS (SELECT 1 FROM ${evaluations} e1 WHERE e1.corps_member_id = cm.id AND e1.evaluator_role = 'platoon_instructor')
             AND EXISTS (SELECT 1 FROM ${evaluations} e2 WHERE e2.corps_member_id = cm.id AND e2.evaluator_role = 'man_o_war_instructor')
           `)
@@ -86,6 +105,7 @@ export const statsRouter = createRouter({
           .from(sql`${corpsMembers} cm`)
           .where(sql`
             cm.batch_id = ${activeBatch.id}
+            ${stateFilter}
             AND EXISTS (SELECT 1 FROM ${comments} c WHERE c.corps_member_id = cm.id)
           `)
           .then((r) => r[0].count);
@@ -148,7 +168,7 @@ export const statsRouter = createRouter({
           .then((r) => r[0].count);
       } else if (user.role === "soldier") {
         processedCount = await db
-          .select({ count: sql<number>`count(*)` })
+          .select({ count: sql<number>`count(distinct c.corps_member_id)` })
           .from(sql`${comments} c`)
           .where(sql`
             c.soldier_id = ${user.id}

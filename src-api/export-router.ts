@@ -16,7 +16,7 @@ export const exportRouter = createRouter({
   // Full report for print
   fullReport: staffQuery
     .input(z.object({ corpsMemberId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = getDb();
 
       // Verify active batch
@@ -35,6 +35,12 @@ export const exportRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!member || member.batchId !== activeBatch.id) return null;
+      const user = ctx.staffUser!;
+      if (user.role === "state_commandant" && (!user.state || activeBatch.state !== user.state || member.state !== user.state)) return null;
+      if (
+        (user.role === "platoon_instructor" || user.role === "man_o_war_instructor" || user.role === "soldier") &&
+        member.platoon !== (user.assignedPlatoon || 0)
+      ) return null;
 
       const institutions = await db
         .select()
@@ -85,9 +91,16 @@ export const exportRouter = createRouter({
 
   // Platoon report for print
   platoonReport: staffQuery
-    .input(z.object({ platoon: z.number() }))
-    .query(async ({ input }) => {
+    .input(z.object({ platoon: z.number().int().min(1).max(10) }))
+    .query(async ({ input, ctx }) => {
       const db = getDb();
+      const user = ctx.staffUser!;
+      if (
+        (user.role === "platoon_instructor" || user.role === "man_o_war_instructor" || user.role === "soldier") &&
+        input.platoon !== (user.assignedPlatoon || 0)
+      ) {
+        throw new Error("Report is outside your assigned platoon");
+      }
 
       // Only export from active batch
       const activeBatch = await db
@@ -97,15 +110,22 @@ export const exportRouter = createRouter({
         .then((rows) => rows[0]);
 
       if (!activeBatch) return [];
+      if (user.role === "state_commandant" && (!user.state || activeBatch.state !== user.state)) return [];
 
       const members = await db
         .select()
         .from(corpsMembers)
         .where(
-          and(
-            eq(corpsMembers.platoon, input.platoon),
-            eq(corpsMembers.batchId, activeBatch.id)
-          )
+          user.role === "state_commandant"
+            ? and(
+                eq(corpsMembers.platoon, input.platoon),
+                eq(corpsMembers.batchId, activeBatch.id),
+                eq(corpsMembers.state, user.state as "ondo" | "lagos")
+              )
+            : and(
+                eq(corpsMembers.platoon, input.platoon),
+                eq(corpsMembers.batchId, activeBatch.id)
+              )
         );
 
       const reportData = await Promise.all(

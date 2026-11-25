@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { motion } from "framer-motion";
 import {
-  Users, MessageSquare, Search, ArrowLeft, CheckCircle, Send,
+  Users, MessageSquare, Search, ArrowLeft, CheckCircle, Send, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ActiveBatchBanner from "@/components/ActiveBatchBanner";
@@ -10,28 +10,29 @@ import { trpc } from "@/providers/trpc";
 import { useScrollPosition } from "@/hooks/useScrollPosition";
 
 type Tab = "dashboard" | "platoon" | "comments";
+type MemberFilter = "all" | "commented" | "not_commented";
 
 export default function SoldierDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get("tab") || "dashboard") as Tab;
-  const setTab = (t: Tab) => setSearchParams({ tab: t });
+  const setTab = (t: Tab, filter?: MemberFilter) => setSearchParams(filter && filter !== "all" ? { tab: t, status: filter } : { tab: t });
+  const filter = (searchParams.get("status") as MemberFilter | null) ?? (tab === "comments" ? "commented" : "all");
 
   return (
     <DashboardLayout requiredRole="soldier" title={tab === "dashboard" ? "Soldier" : tab.charAt(0).toUpperCase() + tab.slice(1)}>
       {tab === "dashboard" && <DashboardOverview onNavigate={setTab} />}
-      {tab === "platoon" && <PlatoonTab />}
-      {tab === "comments" && <PlatoonTab />}
+      {(tab === "platoon" || tab === "comments") && <PlatoonTab status={filter} />}
     </DashboardLayout>
   );
 }
 
-function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab, filter?: MemberFilter) => void }) {
   const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
-    { label: "Total Members", value: stats?.totalMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-red-500", tab: "platoon" as Tab },
-    { label: "Commented", value: stats?.processedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-green-500", tab: "comments" as Tab },
-    { label: "Pending", value: stats?.pendingCount || 0, icon: <MessageSquare className="w-6 h-6" />, color: "bg-amber-500", tab: "platoon" as Tab },
+    { label: "Total Members", value: stats?.totalMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-red-500", tab: "platoon" as Tab, filter: "all" as MemberFilter },
+    { label: "Commented", value: stats?.processedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-green-500", tab: "comments" as Tab, filter: "commented" as MemberFilter },
+    { label: "Pending", value: stats?.pendingCount || 0, icon: <MessageSquare className="w-6 h-6" />, color: "bg-amber-500", tab: "platoon" as Tab, filter: "not_commented" as MemberFilter },
   ];
 
   return (
@@ -44,7 +45,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            onClick={() => onNavigate(card.tab)}
+            onClick={() => onNavigate(card.tab, card.filter)}
             className="bg-white rounded-xl p-6 shadow-sm border text-left hover:shadow-md transition-shadow"
           >
             <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center text-white mb-4`}>{card.icon}</div>
@@ -57,13 +58,17 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   );
 }
 
-function PlatoonTab() {
+function PlatoonTab({ status = "all" }: { status?: MemberFilter }) {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
   const [selectedMember, setSelectedMember] = useState<number | null>(null);
   const scrollContainerRef = useScrollPosition({ key: "soldier-platoon-list" });
 
   const { data: members, refetch } = trpc.corpsMembers.list.useQuery({
     search: search || undefined,
+    evaluationStatus: status === "all" ? undefined : status,
+    limit: 51,
+    offset: page * 50,
   });
 
   const { data: myComment } = trpc.comments.getMine.useQuery(
@@ -94,12 +99,12 @@ function PlatoonTab() {
     <div className="space-y-4 flex flex-col max-h-[calc(100vh-200px)]">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input type="text" placeholder="Search members..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
+        <input type="text" placeholder="Search members..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
       </div>
 
       <div ref={scrollContainerRef} className="overflow-y-auto flex-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
-          {members?.map((m) => (
+          {members?.slice(0, 50).map((m) => (
             <motion.button
               key={m.id}
               initial={{ opacity: 0 }}
@@ -119,9 +124,17 @@ function PlatoonTab() {
                 )}
               </div>
             </motion.button>
-          )) || <p className="text-gray-400 text-center py-8 col-span-full">No members found</p>}
+          ))}
+          {members && members.length === 0 && <p className="text-gray-400 text-center py-8 col-span-full">{status === "commented" ? "No comments yet" : status === "not_commented" ? "Everyone has commented" : "No members found"}</p>}
         </div>
       </div>
+      {members && (members.length > 50 || page > 0) && (
+        <div className="flex items-center justify-between rounded-lg border bg-white px-4 py-3">
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /> Previous</button>
+          <span className="text-sm text-gray-500">Page {page + 1}</span>
+          <button onClick={() => setPage(page + 1)} disabled={members.length <= 50} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Next <ChevronRight className="w-4 h-4" /></button>
+        </div>
+      )}
     </div>
   );
 }
@@ -145,6 +158,7 @@ function CommentForm({
     onSuccess: () => {
       utils.comments.getMine.invalidate();
       utils.comments.list.invalidate();
+      utils.stats.dashboard.invalidate();
       setShowSuccess(true);
       window.setTimeout(onBack, 1500);
     }

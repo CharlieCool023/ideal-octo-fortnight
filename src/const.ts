@@ -36,7 +36,7 @@ export const EVALUATION_CATEGORIES = [
   { key: "teamworkCooperation", label: "Teamwork & Cooperation" },
   { key: "reliabilityDependability", label: "Reliability & Dependability" },
   { key: "respectDignityRights", label: "Respect for Dignity & Rights" },
-];
+] as const;
 
 export const SCORE_LABELS: Record<number, string> = {
   2: "Poor",

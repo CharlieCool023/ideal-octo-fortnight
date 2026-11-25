@@ -36,6 +36,7 @@ db/migrations/*.sql
 # Build outputs
 dist/
 build/
+/server/index.js
 # Test coverage
 coverage/
 .nyc_output/

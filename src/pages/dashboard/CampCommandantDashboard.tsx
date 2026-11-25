@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type Tab = "dashboard" | "members" | "staff" | "batches" | "print" | "export" | "settings";
+type MemberFilter = "all" | "in_progress" | "fully_evaluated" | "commented";
 type CampStaffRole = "platoon_instructor" | "man_o_war_instructor" | "soldier";
 type CampStaffRoleFilter = "" | CampStaffRole;
 type EvaluationSummary = {
@@ -61,12 +62,13 @@ type MemberDetailRecord = {
 export default function CampCommandantDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get("tab") || "dashboard") as Tab;
-  const setTab = (t: Tab) => setSearchParams({ tab: t });
+  const setTab = (t: Tab, filter?: MemberFilter) => setSearchParams(filter && filter !== "all" ? { tab: t, status: filter } : { tab: t });
+  const filter = (searchParams.get("status") as MemberFilter | null) ?? "all";
 
   return (
     <DashboardLayout requiredRole="camp_commandant" title={tab === "dashboard" ? "Camp Commandant" : tab.charAt(0).toUpperCase() + tab.slice(1)}>
       {tab === "dashboard" && <DashboardOverview onNavigate={setTab} />}
-      {tab === "members" && <MembersTab />}
+      {tab === "members" && <MembersTab status={filter} />}
       {tab === "staff" && <StaffTab />}
       {tab === "batches" && <BatchesTab />}
       {tab === "print" && <PrintTab />}
@@ -76,15 +78,15 @@ export default function CampCommandantDashboard() {
   );
 }
 
-function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab, filter?: MemberFilter) => void }) {
   const { data: stats, isLoading, isError } = trpc.stats.dashboard.useQuery();
 
   const cards = [
-    { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-green-500", tab: "members" as Tab },
-    { label: "Started Evaluation", value: stats?.evaluatedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-blue-500", tab: "members" as Tab },
-    { label: "Fully Evaluated", value: stats?.completedEvaluationCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-cyan-600", tab: "members" as Tab },
-    { label: "Comments", value: stats?.commentedCount || 0, icon: <Users className="w-6 h-6" />, color: "bg-purple-500", tab: "members" as Tab },
-    { label: "Manage Staff", value: "View", icon: <UserCog className="w-6 h-6" />, color: "bg-amber-500", tab: "staff" as Tab },
+    { label: "Corps Members", value: stats?.totalCorpsMembers || 0, icon: <Users className="w-6 h-6" />, color: "bg-green-500", tab: "members" as Tab, filter: "all" as MemberFilter },
+    { label: "Started Evaluation", value: stats?.evaluatedCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-blue-500", tab: "members" as Tab, filter: "in_progress" as MemberFilter },
+    { label: "Fully Evaluated", value: stats?.completedEvaluationCount || 0, icon: <CheckCircle className="w-6 h-6" />, color: "bg-cyan-600", tab: "members" as Tab, filter: "fully_evaluated" as MemberFilter },
+    { label: "Comments", value: stats?.commentedCount || 0, icon: <Users className="w-6 h-6" />, color: "bg-purple-500", tab: "members" as Tab, filter: "commented" as MemberFilter },
+    { label: "Manage Staff", value: "View", icon: <UserCog className="w-6 h-6" />, color: "bg-amber-500", tab: "staff" as Tab, filter: "all" as MemberFilter },
   ];
 
   return (
@@ -97,7 +99,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            onClick={() => onNavigate(card.tab)}
+            onClick={() => onNavigate(card.tab, card.filter)}
             className="bg-white rounded-xl p-6 shadow-sm border text-left hover:shadow-md transition-shadow"
           >
             <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center text-white mb-4`}>{card.icon}</div>
@@ -110,7 +112,7 @@ function DashboardOverview({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   );
 }
 
-function MembersTab() {
+function MembersTab({ status = "all" }: { status?: MemberFilter }) {
   const { user } = useAuth({ redirectOnUnauthenticated: true });
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -124,7 +126,8 @@ function MembersTab() {
   const { data: members, refetch } = trpc.corpsMembers.list.useQuery({
     search: search || undefined,
     platoon: platoonFilter,
-    limit: 50,
+    evaluationStatus: status === "all" ? undefined : status,
+    limit: 51,
     offset: page * 50,
   });
 
@@ -177,9 +180,9 @@ function MembersTab() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input type="text" placeholder="Search by name, state code, or call-up..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
+          <input type="text" placeholder="Search by name, state code, or call-up..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" />
         </div>
-        <select value={platoonFilter || ""} onChange={(e) => setPlatoonFilter(e.target.value ? parseInt(e.target.value) : undefined)} className="px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500">
+        <select value={platoonFilter || ""} onChange={(e) => { setPlatoonFilter(e.target.value ? parseInt(e.target.value) : undefined); setPage(0); }} className="px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500">
           <option value="">All Platoons</option>
           {Array.from({ length: 10 }, (_, i) => (<option key={i + 1} value={i + 1}>Platoon {i + 1}</option>))}
         </select>
@@ -201,7 +204,7 @@ function MembersTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {members?.map((m) => (
+                {members && members.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No members found</td></tr> : members?.slice(0, 50).map((m) => (
                   <tr key={m.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-800">
                       <div>{m.surname} {m.otherNames}</div>
@@ -223,16 +226,16 @@ function MembersTab() {
                       />
                     </td>
                   </tr>
-                )) || <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No members found</td></tr>}
+                ))}
               </tbody>
             </table>
           </div>
         </div>
-        {members && members.length >= 50 && (
+        {members && (members.length > 50 || page > 0) && (
           <div className="flex items-center justify-between px-4 py-3 border-t">
             <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /> Previous</button>
             <span className="text-sm text-gray-500">Page {page + 1}</span>
-            <button onClick={() => setPage(page + 1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">Next <ChevronRight className="w-4 h-4" /></button>
+            <button onClick={() => setPage(page + 1)} disabled={members.length <= 50} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Next <ChevronRight className="w-4 h-4" /></button>
           </div>
         )}
       </div>
@@ -438,7 +441,7 @@ function StaffTab() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <input type="text" placeholder="Full Name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
             <input type="text" placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
-            <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
+            <input type="password" placeholder="Password (12+ characters)" minLength={12} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500" required />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as CampStaffRole })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-green-500">
               <option value="platoon_instructor">Platoon Instructor</option>
               <option value="man_o_war_instructor">Man O'War Instructor</option>
